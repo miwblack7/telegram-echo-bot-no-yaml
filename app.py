@@ -57,17 +57,17 @@ async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except ValueError:
         n = 5
 
-    # گرفتن تاریخچه آخرین n پیام
-    messages = await context.bot.get_chat_history(chat.id, limit=n+1)  # +1 چون پیام /clean خودش هم هست
+    # پاک کردن n پیام آخر (شامل دستور /clean هم)
+    current_id = update.message.message_id
     deleted = 0
-    for msg in messages:
+    for i in range(n+1):  # +1 یعنی پیام دستور هم حذف بشه
         try:
-            await context.bot.delete_message(chat.id, msg.message_id)
+            await context.bot.delete_message(chat.id, current_id - i)
             deleted += 1
         except Exception as e:
-            logger.warning(f"خطا در حذف پیام {msg.message_id}: {e}")
+            logger.warning(f"خطا در حذف پیام {current_id - i}: {e}")
 
-    await update.message.reply_text(f"✅ {deleted} پیام آخر پاک شد.")
+    await update.message.reply_text(f"✅ {deleted} پیام آخر پاک شد.", quote=False)
 
 # اجرای اصلی
 def main() -> None:
