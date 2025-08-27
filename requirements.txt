@@ -1,2 +1,4 @@
-python-telegram-bot[webhooks]==20.6
-Flask==2.3.2
+python-telegram-bot[webhooks]==22.3
+Flask==3.0.3
+uvicorn==0.30.6
+asgiref==3.8.1
