@@ -9,7 +9,7 @@ import uvicorn
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
+    Application, CallbackQueryHandler,
     MessageHandler, ContextTypes, filters
 )
 
@@ -111,7 +111,6 @@ async def buttons_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
     elif query.data == "leave":
-        # فقط پاک کردن پیام منو، ربات از گروه خارج نمی‌شود
         try:
             await query.message.delete()
         except Exception:
@@ -126,8 +125,12 @@ async def welcome_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- Application ----------
 application = Application.builder().token(TOKEN).updater(None).build()
-application.add_handler(CommandHandler("start", start_cmd))
-application.add_handler(CommandHandler("clean", clean_cmd))
+
+# دستورات بدون /
+application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^start$"), start_cmd))
+application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^clean$"), clean_cmd))
+
+# بقیه هندلرها
 application.add_handler(CallbackQueryHandler(buttons_cb))
 application.add_handler(MessageHandler(~filters.StatusUpdate.ALL, track_messages))
 application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_bot))
