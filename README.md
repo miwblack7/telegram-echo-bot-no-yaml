@@ -1,16 +1,15 @@
-# Telegram Echo Bot (بدون render.yaml)
+# Telegram Cleaner Bot
 
-یک ربات ساده تلگرام با Python و [python-telegram-bot](https://python-telegram-bot.org).
+یک بات ساده تلگرام با دکمه‌های شیشه‌ای:
+- 🧹 پاکسازی چند پیام آخر گروه
+- 🚪 خروج از گروه
 
-## 🚀 دیپلوی روی Render (وب‌سرویس معمولی)
-1. این Repo را روی GitHub قرار دهید.
-2. در Render → New + → Web Service → Repo را انتخاب کنید.
-3. تنظیمات:
-   - Environment: Python 3
-   - Build Command: pip install -r requirements.txt
-   - Start Command: python app.py
-4. Env Vars را در Settings اضافه کنید:
-   - `TELEGRAM_TOKEN` = توکن BotFather
-   - `PUBLIC_URL` = آدرس پابلیک سرویس (مثلاً https://telegram-echo-bot.onrender.com)
-   - `WEBHOOK_SECRET` = یک رشته امن دلخواه
-5. Redeploy کنید.
+## 🚀 دیپلوی روی Render
+1. این ریپو رو Fork/Clone کن.
+2. روی Render یک Web Service جدید بساز و به این ریپو وصلش کن.
+3. متغیرهای محیطی زیر رو اضافه کن:
+   - `TELEGRAM_TOKEN` → توکن بات
+   - `PUBLIC_URL` → آدرس پابلیک Render (مثلاً `https://your-bot.onrender.com`)
+   - `WEBHOOK_SECRET` → یه عبارت دلخواه (برای امنیت)
+
+بات بعد از Deploy آماده استفاده است ✅
