@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: telegram-cleaner-bot
+    name: telegram-cleaner-bot-no-yaml
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
