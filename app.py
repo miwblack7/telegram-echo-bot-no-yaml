@@ -117,12 +117,20 @@ async def buttons_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+async def welcome_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for member in update.message.new_chat_members:
+        if member.id == (await context.bot.get_me()).id:
+            await update.message.reply_text(
+                "سلام! من اضافه شدم. لطفاً من را ادمین با دسترسی حذف پیام‌ها کنید تا پاکسازی کار کند ✅"
+            )
+
 # ---------- Application ----------
 application = Application.builder().token(TOKEN).updater(None).build()
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("clean", clean_cmd))
 application.add_handler(CallbackQueryHandler(buttons_cb))
 application.add_handler(MessageHandler(~filters.StatusUpdate.ALL, track_messages))
+application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_bot))
 
 # ---------- Flask ----------
 flask_app = Flask(__name__)
@@ -138,6 +146,12 @@ async def webhook():
     await application.update_queue.put(update)
     return "ok", 200
 
+# مسیر ping برای UptimeRobot
+@flask_app.get("/ping")
+def ping():
+    return "ok", 200
+
+# ---------- Main ----------
 async def main():
     webhook_url = f"{PUBLIC_URL.rstrip('/')}/webhook"
     await application.initialize()
