@@ -111,17 +111,11 @@ async def buttons_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
     elif query.data == "leave":
-        if not await _is_admin(context, chat_id, user_id):
-            await query.edit_message_text("⛔️ فقط ادمین می‌تواند ربات را خارج کند.")
-            return
+        # فقط پاک کردن پیام منو، ربات از گروه خارج نمی‌شود
         try:
-            await query.edit_message_text("👋 خداحافظ!")
+            await query.message.delete()
         except Exception:
             pass
-        try:
-            await context.bot.leave_chat(chat_id)
-        except Exception as e:
-            logger.error("leave_chat failed: %s", e)
 
 # ---------- Application ----------
 application = Application.builder().token(TOKEN).updater(None).build()
