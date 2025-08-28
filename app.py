@@ -17,7 +17,14 @@ logging.basicConfig(level=logging.INFO)
 
 flask_app = Flask(__name__)
 bot = Bot(token=TELEGRAM_TOKEN)
+
+# ایجاد loop جدید
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# ایجاد Application
 application = Application.builder().token(TELEGRAM_TOKEN).build()
+loop.run_until_complete(application.initialize())
 
 # دستور start
 async def start(update, context):
@@ -30,8 +37,8 @@ application.add_handler(CommandHandler("start", start))
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, bot)
-    # ارسال update به queue به صورت thread-safe
-    run_coroutine_threadsafe(application.update_queue.put(update), application.loop)
+    # ارسال update به queue به صورت thread-safe با loop خودمان
+    run_coroutine_threadsafe(application.update_queue.put(update), loop)
     return "ok"
 
 # مسیر Health Check
@@ -39,10 +46,8 @@ def webhook():
 def health():
     return "ok", 200
 
-# اجرای سرور و loop برای پردازش handler ها
+# اجرای سرور و پردازش handler ها
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.initialize())
     bot.set_webhook(f"{APP_URL}/webhook/{WEBHOOK_SECRET}")
     logging.info(f"Bot started with webhook: {APP_URL}/webhook/{WEBHOOK_SECRET}")
 
