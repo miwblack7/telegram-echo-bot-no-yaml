@@ -1,15 +1,22 @@
-# Telegram Cleaner Bot
+# Telegram Clean Bot
 
-یک بات ساده تلگرام با دکمه‌های شیشه‌ای:
-- 🧹 پاکسازی چند پیام آخر گروه
-- 🚪 خروج از گروه
+ربات تلگرام با وبهوک و Flask برای پاکسازی پیام‌ها
 
-## 🚀 دیپلوی روی Render
-1. این ریپو رو Fork/Clone کن.
-2. روی Render یک Web Service جدید بساز و به این ریپو وصلش کن.
-3. متغیرهای محیطی زیر رو اضافه کن:
-   - `TELEGRAM_TOKEN` → توکن بات
-   - `PUBLIC_URL` → آدرس پابلیک Render (مثلاً `https://your-bot.onrender.com`)
-   - `WEBHOOK_SECRET` → یه عبارت دلخواه (برای امنیت)
+## Environment Variables
 
-بات بعد از Deploy آماده استفاده است ✅
+- TELEGRAM_TOKEN: توکن ربات تلگرام
+- WEBHOOK_SECRET: یک رشته دلخواه برای امنیت وبهوک
+- APP_URL: آدرس سرویس Render (مثلا https://mybot.onrender.com)
+
+## Deploy on Render
+
+Start Command:
+```
+gunicorn app:flask_app --preload --workers=4 --threads=8 --bind=0.0.0.0:$PORT
+```
+
+## Health Check
+برای تست سلامت سرویس:
+```
+https://your-bot-name.onrender.com/ping
+```
