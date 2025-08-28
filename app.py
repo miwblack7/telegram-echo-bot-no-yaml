@@ -1,54 +1,42 @@
+import os
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# ====== تنظیمات ربات ======
-TOKEN = "توکن_ربات_تو_اینجا"  # جایگزین با توکن خودت
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+PORT = int(os.environ.get("PORT", 5000))
+
+if not TOKEN:
+    raise ValueError("لطفاً توکن ربات را در TELEGRAM_TOKEN وارد کنید!")
+
+# Flask app
 app = Flask(__name__)
-bot = Bot(token=TOKEN)
 
-# ====== ساخت اپلیکیشن تلگرام ======
-application = ApplicationBuilder().token(TOKEN).build()
-
-# ====== دستورات ربات ======
+# Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! ربات با موفقیت فعال شد.")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("دستورات موجود:\n/start - شروع ربات\n/help - راهنمایی\n/ping - بررسی سلامت\n/echo - تکرار پیام")
-
-async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("pong!")
+    await update.message.reply_text("سلام! من ربات شما هستم!")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # متن بعد از /echo را دریافت می‌کند
-    text_to_echo = " ".join(context.args)
-    if not text_to_echo:
-        await update.message.reply_text("لطفاً بعد از /echo چیزی تایپ کن تا تکرار شود.")
-    else:
-        await update.message.reply_text(text_to_echo)
+    text = update.message.text
+    await update.message.reply_text(f"شما نوشتید: {text}")
 
-# افزودن handler ها
+# Telegram bot application
+application = ApplicationBuilder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
-application.add_handler(CommandHandler("ping", ping))
 application.add_handler(CommandHandler("echo", echo))
 
-# ====== مسیر webhook ======
-@app.route("/webhook/<token>", methods=["POST"])
-async def webhook(token):
-    if token != TOKEN:
-        return "Unauthorized", 403
-    update = Update.de_json(request.get_json(force=True), bot)
-    await application.process_update(update)
-    return "ok"
+# Flask route for Telegram webhook
+@app.route(f"/webhook/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.create_task(application.update_queue.put(update))
+    return "OK"
 
-# ====== مسیر Health Check ======
-@app.route("/")
+# Optional: health check
+@app.route("/", methods=["GET"])
 def index():
-    return "ربات آماده است!"
+    return "Bot is running!"
 
-# ====== اجرای محلی (اختیاری) ======
+# Start Flask app (for local testing)
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(app.run(host="0.0.0.0", port=5000))
+    application.run_polling()  # فقط برای تست محلی، روی Render از webhook استفاده می‌کنیم
