@@ -1,75 +1,73 @@
 import os
-import asyncio
 from flask import Flask, request
-from telegram import Update, Bot, ChatMember, ChatMemberUpdated
-from telegram.ext import (
-    ApplicationBuilder, ContextTypes,
-    CommandHandler, ChatMemberHandler
-)
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, ContextTypes, CallbackQueryHandler
 
-# Flask app
-app = Flask(__name__)
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+APP_URL = os.environ.get("APP_URL")  # https://yourapp.onrender.com
 
-# دریافت توکن
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-if not TELEGRAM_TOKEN:
-    raise RuntimeError("Env var TELEGRAM_TOKEN تنظیم نشده است.")
+flask_app = Flask(__name__)
+bot = Bot(token=TOKEN)
 
-bot = Bot(token=TELEGRAM_TOKEN)
-app_builder = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+# ------------------------------
+# Inline Keyboard
+# ------------------------------
+keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton("پاکسازی گروه", callback_data="clean")],
+    [InlineKeyboardButton("خروج ربات", callback_data="leave")]
+])
 
-# دستور start (بدون اسلش)
+# ------------------------------
+# Handlers
+# ------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! ربات آنلاین است.")
+    await update.message.reply_text("ربات فعال شد!", reply_markup=keyboard)
 
-# دستور clean (پاکسازی پیام‌های گروه)
-async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    if chat.type == "private":
-        await update.message.reply_text("این دستور فقط در گروه قابل استفاده است.")
-        return
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
 
-    # پاک کردن پیام‌های گروه (به تعداد محدود، به دلیل محدودیت Telegram)
-    messages = await context.bot.get_chat_history(chat.id, limit=100)
-    for msg in messages:
+    if query.data == "clean":
         try:
-            await msg.delete()
-        except:
-            pass
-    await update.message.reply_text("پیام‌های گروه پاک شد!")
+            # پاکسازی 100 پیام اخیر گروه
+            messages = await context.bot.get_chat(chat_id).get_history(limit=100)
+            for msg in messages:
+                try:
+                    await context.bot.delete_message(chat_id, msg.message_id)
+                except:
+                    pass
+            await query.edit_message_text("تمام پیام‌های گروه پاک شد!")
+        except Exception as e:
+            await query.edit_message_text(f"خطا در پاکسازی: {e}")
 
-# اضافه شدن ربات به گروه → گرفتن ادمین کامل
-async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    result = update.chat_member
-    if result.new_chat_member.user.id == bot.id:
-        await bot.promote_chat_member(
-            chat_id=result.chat.id,
-            user_id=bot.id,
-            can_delete_messages=True,
-            can_restrict_members=True,
-            can_promote_members=True,
-            can_change_info=True,
-            can_invite_users=True,
-            can_pin_messages=True,
-            is_anonymous=False
-        )
+    elif query.data == "leave":
+        try:
+            await context.bot.send_message(chat_id, "ربات گروه را ترک می‌کند.")
+            await context.bot.leave_chat(chat_id)
+        except Exception as e:
+            await query.edit_message_text(f"خطا در خروج: {e}")
 
-# اضافه کردن handler ها
-app_builder.add_handler(CommandHandler("start", start))
-app_builder.add_handler(CommandHandler("clean", clean))
-app_builder.add_handler(ChatMemberHandler(new_member, ChatMemberHandler.MY_CHAT_MEMBER))
+# ------------------------------
+# Telegram Application
+# ------------------------------
+app_builder = ApplicationBuilder().token(TOKEN).build()
+app_builder.add_handler(CallbackQueryHandler(button))
 
-# وبهوک
-@app.route(f"/webhook/{TELEGRAM_TOKEN}", methods=["POST"])
+# ------------------------------
+# Flask Webhook
+# ------------------------------
+@flask_app.route("/")
+def index():
+    return "Bot is running!"
+
+@flask_app.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.run(app_builder.update_queue.put(update))
-    return "OK"
+    app_builder.update_queue.put(update)
+    return "ok"
 
-# Health Check
-@app.route("/", methods=["GET"])
-def index():
-    return "Bot is running", 200
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# Set webhook on startup
+@app_builder.run_async
+async def set_webhook():
+    await bot.set_webhook(f"{APP_URL}/webhook/{TOKEN}")
