@@ -150,4 +150,4 @@ async def main():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
-    flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
