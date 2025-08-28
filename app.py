@@ -1,10 +1,10 @@
 import os
 import logging
+import asyncio
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler
 
-# تنظیم متغیرهای محیطی
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "mysecret")
 APP_URL = os.getenv("APP_URL")
@@ -14,10 +14,7 @@ if not TELEGRAM_TOKEN or not APP_URL:
 
 logging.basicConfig(level=logging.INFO)
 
-# Flask app
 flask_app = Flask(__name__)
-
-# Telegram bot
 bot = Bot(token=TELEGRAM_TOKEN)
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -27,29 +24,26 @@ async def start(update, context):
 
 application.add_handler(CommandHandler("start", start))
 
-# وبهوک ربات
+# وبهوک
 @flask_app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
-    try:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, bot)
-        application.update_queue.put_nowait(update)
-    except Exception as e:
-        logging.exception("❌ Webhook error:")
-        return "error", 500
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot)
+    asyncio.get_event_loop().create_task(application.update_queue.put(update))
     return "ok"
 
-# مسیر Health Check برای Render
+# مسیر Health Check
 @flask_app.get("/")
 def health():
     return "ok", 200
 
-# اجرای سرور
+# اجرای سرور و loop برای پردازش handler ها
 if __name__ == "__main__":
-    import asyncio
-    # فقط initialize و webhook، بدون application.start()
-    asyncio.run(application.initialize())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.initialize())
     bot.set_webhook(f"{APP_URL}/webhook/{WEBHOOK_SECRET}")
     logging.info(f"Bot started with webhook: {APP_URL}/webhook/{WEBHOOK_SECRET}")
-    # Flask را بدون اجرای start ربات، Gunicorn loop مدیریت می‌کند
+
+    # ایجاد task برای پردازش update_queue
+    loop.create_task(application.start())
     flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
