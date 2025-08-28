@@ -1,69 +1,53 @@
-# app.py
-import os
-import asyncio
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler
 
-# متغیرهای محیطی
-TOKEN = os.environ.get("TELEGRAM_TOKEN")  # توکن ربات
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # URL وبهوک
+# توکن ربات خودتون
+TOKEN = "8344618608:AAHHSriiACSEQZ3TzXmfW8rbx0HAdGPGpp4"
 
-# ساخت اپلیکیشن Flask
+bot = Bot(token=TOKEN)
 app = Flask(__name__)
 
-# ساخت اپلیکیشن تلگرام
+# ساخت Application تلگرام
 application = ApplicationBuilder().token(TOKEN).build()
 
-# -------------------------
-# دستورات ربات
-# -------------------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! من ربات شما هستم.")
+# دستور /start
+async def start(update: Update, context):
+    await update.message.reply_text("سلام! ربات شما آماده است.")
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("دستورات موجود:\n/start\n/help\n/echo")
+# دستور /help
+async def help_command(update: Update, context):
+    await update.message.reply_text(
+        "دستورات موجود:\n"
+        "/start - شروع ربات\n"
+        "/help - راهنمای دستورات\n"
+        "/echo - تکرار پیغام شما"
+    )
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # همان متن کاربر را جواب می‌دهد
-    text = update.message.text
-    await update.message.reply_text(f"پیام شما: {text}")
+# دستور /echo
+async def echo(update: Update, context):
+    if context.args:
+        text = " ".join(context.args)
+        await update.message.reply_text(text)
+    else:
+        await update.message.reply_text("لطفا متنی برای تکرار ارسال کنید. مثال:\n/echo سلام")
 
-# اضافه کردن دستورات به اپلیکیشن تلگرام
+# اضافه کردن دستورها به ربات
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("help", help_command))
 application.add_handler(CommandHandler("echo", echo))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-# -------------------------
-# مسیر وبهوک
-# -------------------------
+# وبهوک سینک برای Flask
 @app.route("/webhook", methods=["POST"])
-async def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.update_queue.put(update)
-    return "OK", 200
+def webhook():
+    update = Update.de_json(request.get_json(force=True), bot)
+    application.process_update(update)  # پردازش آپدیت
+    return "ok"
 
-# مسیر اصلی برای تست
-@app.route("/", methods=["GET"])
+# روت ساده برای تست
+@app.route("/")
 def index():
-    return "ربات فعال است!", 200
+    return "ربات فعال است!"
 
-# -------------------------
-# تنظیم وبهوک
-# -------------------------
-async def set_webhook():
-    await application.bot.set_webhook(WEBHOOK_URL)
-    print(f"Webhook set to {WEBHOOK_URL}")
-
-# -------------------------
-# اجرای ربات
-# -------------------------
 if __name__ == "__main__":
-    import sys
-    import logging
-
-    logging.basicConfig(level=logging.INFO)
-    
-    asyncio.run(set_webhook())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=5000)
