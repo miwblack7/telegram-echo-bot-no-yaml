@@ -1,35 +1,36 @@
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Dispatcher, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# === تنظیمات ===
-TOKEN = "توکن_ربات_تو_اینجا"  # توکن ربات را از BotFather بگیر
+TOKEN = "توکن_ربات_تو_اینجا"  # توکن ربات
 
-# === ساخت برنامه Flask و Bot ===
 app = Flask(__name__)
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot, None)
 
-# === دستور ساده /start ===
-def start(update: Update, context):
-    update.message.reply_text("سلام! ربات با موفقیت فعال شد.")
+# === ساخت اپلیکیشن تلگرام ===
+application = ApplicationBuilder().token(TOKEN).build()
 
-dp.add_handler(CommandHandler("start", start))
+# === دستور /start ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("سلام! ربات با موفقیت فعال شد.")
+
+application.add_handler(CommandHandler("start", start))
 
 # === مسیر webhook ===
 @app.route("/webhook/<token>", methods=["POST"])
-def webhook(token):
+async def webhook(token):
     if token != TOKEN:
         return "Unauthorized", 403
     update = Update.de_json(request.get_json(force=True), bot)
-    dp.process_update(update)
+    await application.process_update(update)
     return "ok"
 
-# === مسیر اصلی برای بررسی ===
+# === مسیر اصلی برای Health Check ===
 @app.route("/")
 def index():
     return "ربات آماده است!"
 
-# === اگر بخواهی محلی اجرا کنی ===
+# === اجرا محلی (اختیاری) ===
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    import asyncio
+    asyncio.run(app.run(host="0.0.0.0", port=5000))
