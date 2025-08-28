@@ -1,80 +1,54 @@
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 import os
 import asyncio
-from flask import Flask, request
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, ContextTypes, CallbackQueryHandler
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-APP_URL = os.environ.get("APP_URL")  # https://yourapp.onrender.com
+# =======  تنظیمات =========
+TOKEN = os.environ.get("BOT_TOKEN")      # توکن ربات
+APP_URL = os.environ.get("APP_URL")      # آدرس رندر مثل https://mybot.onrender.com
 
-flask_app = Flask(__name__)
-bot = Bot(token=TOKEN)
+app = Flask(__name__)
 
-# ------------------------------
-# Inline Keyboard
-# ------------------------------
-keyboard = InlineKeyboardMarkup([
-    [InlineKeyboardButton("پاکسازی گروه", callback_data="clean")],
-    [InlineKeyboardButton("خروج ربات", callback_data="leave")]
-])
+# ======= ساخت اپلیکیشن تلگرام ========
+application = ApplicationBuilder().token(TOKEN).build()
 
-# ------------------------------
-# Handlers
-# ------------------------------
+# ======= دستور /start =======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ربات فعال شد!", reply_markup=keyboard)
+    await update.message.reply_text("سلام! ربات فعال است و پیام‌ها را پاک می‌کند.")
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    chat_id = query.message.chat.id
+application.add_handler(CommandHandler("start", start))
 
-    if query.data == "clean":
+# ======= دریافت پیام و حذف آن =======
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
         try:
-            messages = await context.bot.get_chat(chat_id).get_history(limit=100)
-            for msg in messages:
-                try:
-                    await context.bot.delete_message(chat_id, msg.message_id)
-                except:
-                    pass
-            await query.edit_message_text("تمام پیام‌های گروه پاک شد!")
+            # حذف پیام ارسالی
+            await update.message.delete()
+            
+            # پاسخ دادن به پیام (مثال: همان متن)
+            await update.effective_chat.send_message(f"پیام شما دریافت شد: {update.message.text}")
         except Exception as e:
-            await query.edit_message_text(f"خطا در پاکسازی: {e}")
+            print("خطا در حذف یا پاسخ:", e)
 
-    elif query.data == "leave":
-        try:
-            await context.bot.send_message(chat_id, "ربات گروه را ترک می‌کند.")
-            await context.bot.leave_chat(chat_id)
-        except Exception as e:
-            await query.edit_message_text(f"خطا در خروج: {e}")
+# همه پیام‌ها را مدیریت می‌کنیم
+application.add_handler(MessageHandler(filters.ALL & (~filters.StatusUpdate.ALL), handle_message))
 
-# ------------------------------
-# Telegram Application
-# ------------------------------
-app_builder = ApplicationBuilder().token(TOKEN).build()
-app_builder.add_handler(CallbackQueryHandler(button))
+# ======= وبهوک =======
+@app.route(f"/webhook/{TOKEN}", methods=["POST"])
+def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, Bot(TOKEN))
+    # اضافه کردن به صف اپلیکیشن
+    asyncio.run(application.update_queue.put(update))
+    return "ok"
 
-# ------------------------------
-# Flask Webhook
-# ------------------------------
-@flask_app.route("/")
+# ======= Health Check برای Render =======
+@app.route("/", methods=["GET"])
 def index():
     return "Bot is running!"
 
-@flask_app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.create_task(app_builder.update_queue.put(update))
-    return "ok"
-
-# ------------------------------
-# Run Flask + set webhook
-# ------------------------------
-async def main():
-    await bot.set_webhook(f"{APP_URL}/webhook/{TOKEN}")
-    # Application فقط update_queue را مدیریت می‌کند، نیازی به run_async نیست
-    # Render با Gunicorn اجرا می‌شود
-    print("Webhook set!")
-
+# ======= اجرای برنامه =======
 if __name__ == "__main__":
-    asyncio.run(main())
+    port = int(os.environ.get("PORT", 5000))  # پورت را از Render می‌گیریم
+    app.run(host="0.0.0.0", port=port)
