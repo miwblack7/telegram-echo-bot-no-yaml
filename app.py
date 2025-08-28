@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from asyncio import run_coroutine_threadsafe
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler
@@ -29,7 +30,8 @@ application.add_handler(CommandHandler("start", start))
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, bot)
-    asyncio.get_event_loop().create_task(application.update_queue.put(update))
+    # ارسال update به queue به صورت thread-safe
+    run_coroutine_threadsafe(application.update_queue.put(update), application.loop)
     return "ok"
 
 # مسیر Health Check
