@@ -1,4 +1,5 @@
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CallbackQueryHandler
@@ -30,7 +31,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "clean":
         try:
-            # پاکسازی 100 پیام اخیر گروه
             messages = await context.bot.get_chat(chat_id).get_history(limit=100)
             for msg in messages:
                 try:
@@ -64,10 +64,17 @@ def index():
 @flask_app.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
-    app_builder.update_queue.put(update)
+    asyncio.create_task(app_builder.update_queue.put(update))
     return "ok"
 
-# Set webhook on startup
-@app_builder.run_async
-async def set_webhook():
+# ------------------------------
+# Run Flask + set webhook
+# ------------------------------
+async def main():
     await bot.set_webhook(f"{APP_URL}/webhook/{TOKEN}")
+    # Application فقط update_queue را مدیریت می‌کند، نیازی به run_async نیست
+    # Render با Gunicorn اجرا می‌شود
+    print("Webhook set!")
+
+if __name__ == "__main__":
+    asyncio.run(main())
