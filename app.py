@@ -1,10 +1,10 @@
-
 import os
 import logging
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler
 
+# تنظیم متغیرهای محیطی
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "mysecret")
 APP_URL = os.getenv("APP_URL")
@@ -14,16 +14,20 @@ if not TELEGRAM_TOKEN or not APP_URL:
 
 logging.basicConfig(level=logging.INFO)
 
+# Flask app
 flask_app = Flask(__name__)
 
+# Telegram bot
 bot = Bot(token=TELEGRAM_TOKEN)
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+# دستور start
 async def start(update, context):
     await update.message.reply_text("سلام! من آماده‌ام ✅")
 
 application.add_handler(CommandHandler("start", start))
 
+# وبهوک ربات
 @flask_app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
     try:
@@ -35,10 +39,12 @@ def webhook():
         return "error", 500
     return "ok"
 
-@flask_app.get("/ping")
-def ping():
-    return "ok"
+# مسیر Health Check برای Render
+@flask_app.get("/")
+def health():
+    return "ok", 200
 
+# اجرای سرور
 if __name__ == "__main__":
     import asyncio
     asyncio.run(application.initialize())
