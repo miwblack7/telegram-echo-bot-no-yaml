@@ -47,7 +47,9 @@ def health():
 # اجرای سرور
 if __name__ == "__main__":
     import asyncio
+    # فقط initialize و webhook، بدون application.start()
     asyncio.run(application.initialize())
     bot.set_webhook(f"{APP_URL}/webhook/{WEBHOOK_SECRET}")
     logging.info(f"Bot started with webhook: {APP_URL}/webhook/{WEBHOOK_SECRET}")
-    asyncio.run(application.start())
+    # Flask را بدون اجرای start ربات، Gunicorn loop مدیریت می‌کند
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
