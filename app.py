@@ -1,54 +1,35 @@
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-import os
-import asyncio
+from telegram.ext import Dispatcher, CommandHandler
 
-# =======  تنظیمات =========
-TOKEN = os.environ.get("BOT_TOKEN")      # توکن ربات
-APP_URL = os.environ.get("APP_URL")      # آدرس رندر مثل https://mybot.onrender.com
+# === تنظیمات ===
+TOKEN = "توکن_ربات_تو_اینجا"  # توکن ربات را از BotFather بگیر
 
+# === ساخت برنامه Flask و Bot ===
 app = Flask(__name__)
+bot = Bot(token=TOKEN)
+dp = Dispatcher(bot, None)
 
-# ======= ساخت اپلیکیشن تلگرام ========
-application = ApplicationBuilder().token(TOKEN).build()
+# === دستور ساده /start ===
+def start(update: Update, context):
+    update.message.reply_text("سلام! ربات با موفقیت فعال شد.")
 
-# ======= دستور /start =======
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! ربات فعال است و پیام‌ها را پاک می‌کند.")
+dp.add_handler(CommandHandler("start", start))
 
-application.add_handler(CommandHandler("start", start))
-
-# ======= دریافت پیام و حذف آن =======
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        try:
-            # حذف پیام ارسالی
-            await update.message.delete()
-            
-            # پاسخ دادن به پیام (مثال: همان متن)
-            await update.effective_chat.send_message(f"پیام شما دریافت شد: {update.message.text}")
-        except Exception as e:
-            print("خطا در حذف یا پاسخ:", e)
-
-# همه پیام‌ها را مدیریت می‌کنیم
-application.add_handler(MessageHandler(filters.ALL & (~filters.StatusUpdate.ALL), handle_message))
-
-# ======= وبهوک =======
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, Bot(TOKEN))
-    # اضافه کردن به صف اپلیکیشن
-    asyncio.run(application.update_queue.put(update))
+# === مسیر webhook ===
+@app.route("/webhook/<token>", methods=["POST"])
+def webhook(token):
+    if token != TOKEN:
+        return "Unauthorized", 403
+    update = Update.de_json(request.get_json(force=True), bot)
+    dp.process_update(update)
     return "ok"
 
-# ======= Health Check برای Render =======
-@app.route("/", methods=["GET"])
+# === مسیر اصلی برای بررسی ===
+@app.route("/")
 def index():
-    return "Bot is running!"
+    return "ربات آماده است!"
 
-# ======= اجرای برنامه =======
+# === اگر بخواهی محلی اجرا کنی ===
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # پورت را از Render می‌گیریم
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
