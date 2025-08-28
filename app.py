@@ -1,178 +1,153 @@
 import os
 import asyncio
-import logging
-from collections import defaultdict, deque
-
-from flask import Flask, request, abort
-from asgiref.wsgi import WsgiToAsgi
-import uvicorn
-
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CallbackQueryHandler,
-    MessageHandler, ContextTypes, filters
+    Application,
+    CallbackContext,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
 )
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from telegram.constants import ChatMemberStatus
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-if not TOKEN:
-    raise RuntimeError("Env var TELEGRAM_TOKEN تنظیم نشده است.")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "mysecret")
+APP_URL = os.getenv("APP_URL")  # مثلا https://mybot.onrender.com
 
-PUBLIC_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL")
-if not PUBLIC_URL:
-    raise RuntimeError("WEBHOOK_URL یا RENDER_EXTERNAL_URL تنظیم نیست.")
+# ---------------- Flask ----------------
+flask_app = Flask(__name__)
 
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "change-this-to-a-long-random-string")
+@flask_app.get("/ping")
+def ping():
+    return "ok", 200
 
-MSG_STORE: dict[int, deque[int]] = defaultdict(lambda: deque(maxlen=5000))
+@flask_app.post(f"/webhook/{WEBHOOK_SECRET}")
+async def webhook() -> tuple[str, int]:
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
+    await application.update_queue.put(update)
+    return "ok", 200
 
-# ---------- Handlers ----------
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    if chat.type not in ("group", "supergroup"):
-        await update.effective_message.reply_text("من فقط داخل گروه/سوپرگروه کار می‌کنم 🙂")
-        return
+# ---------------- Bot Logic ----------------
+message_store = {}
 
-    kb = InlineKeyboardMarkup(
-        [[
-            InlineKeyboardButton("🧹 پاکسازی", callback_data="clean"),
-            InlineKeyboardButton("🚪 خروج",    callback_data="leave"),
-        ]]
-    )
-    await update.effective_message.reply_text("پنل مدیریت:", reply_markup=kb)
-
-async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.effective_message
-    if not msg:
-        return
-    if msg.chat.type in ("group", "supergroup"):
-        MSG_STORE[msg.chat_id].append(msg.message_id)
-
-async def _is_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> bool:
+# چک کردن ادمین بودن کاربر
+async def _is_admin(context: CallbackContext, chat_id: int, user_id: int) -> bool:
     member = await context.bot.get_chat_member(chat_id, user_id)
-    return member.status in ("administrator", "creator")
+    return member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
 
-async def _bot_can_delete(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
+# چک کردن دسترسی حذف برای ربات
+async def _bot_can_delete(context: CallbackContext, chat_id: int) -> bool:
     me = await context.bot.get_me()
-    m = await context.bot.get_chat_member(chat_id, me.id)
-    return (m.status in ("administrator", "creator")) and bool(getattr(m, "can_delete_messages", False))
+    member = await context.bot.get_chat_member(chat_id, me.id)
+    return member.can_delete_messages
 
+# ذخیره پیام‌ها
+async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    msg_id = update.effective_message.id
+    message_store.setdefault(chat_id, set()).add(msg_id)
+
+# پاکسازی پیام‌ها
 async def _do_clean(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> int:
-    ids = list(MSG_STORE.get(chat_id, []))
-    if not ids:
-        return 0
-    deleted = 0
-    for i in range(0, len(ids), 100):
-        batch = ids[i:i+100]
+    ids = list(message_store.get(chat_id, []))
+    count = 0
+    for mid in ids:
         try:
-            ok = await context.bot.delete_messages(chat_id=chat_id, message_ids=batch)
-            if ok:
-                deleted += len(batch)
-        except Exception as e:
-            logger.warning("delete_messages batch failed: %s", e)
-    MSG_STORE[chat_id].clear()
-    return deleted
+            await context.bot.delete_message(chat_id, mid)
+            count += 1
+        except:
+            pass
+    message_store[chat_id] = set()
+    return count
+
+# ---------------- Commands ----------------
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[
+        InlineKeyboardButton("🧹 پاکسازی", callback_data="clean"),
+        InlineKeyboardButton("❌ خروج", callback_data="exit")
+    ]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    sent = await update.effective_message.reply_text(
+        "👋 سلام! این پنل مدیریت ربات است:", reply_markup=reply_markup
+    )
+    await asyncio.sleep(5)
+    await sent.delete()
 
 async def clean_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
     if chat.type not in ("group", "supergroup"):
-        await update.effective_message.reply_text("این دستور فقط داخل گروه کار می‌کند.")
+        sent = await update.effective_message.reply_text("⛔️ این دستور فقط داخل گروه کار می‌کند.")
+        await asyncio.sleep(5)
+        await sent.delete()
         return
+
     if not await _is_admin(context, chat.id, user.id):
-        await update.effective_message.reply_text("⛔️ فقط ادمین می‌تواند پاکسازی کند.")
+        sent = await update.effective_message.reply_text("⛔️ فقط ادمین می‌تواند پاکسازی کند.")
+        await asyncio.sleep(5)
+        await sent.delete()
         return
+
     if not await _bot_can_delete(context, chat.id):
-        await update.effective_message.reply_text("⛔️ ربات دسترسی حذف پیام ندارد. لطفاً حق «Delete messages» را بدهید.")
+        sent = await update.effective_message.reply_text("⛔️ ربات دسترسی حذف پیام ندارد.")
+        await asyncio.sleep(5)
+        await sent.delete()
         return
 
     count = await _do_clean(chat.id, context)
-    await update.effective_message.reply_text(f"✅ تلاش برای حذف {count} پیام (حداکثر ۴۸ ساعت اخیر).")
+    sent = await update.effective_message.reply_text(f"✅ {count} پیام پاک شد.")
+    await asyncio.sleep(5)
+    await sent.delete()
 
 async def buttons_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    chat_id = query.message.chat_id
-    user_id = query.from_user.id
-
     if query.data == "clean":
-        if not await _is_admin(context, chat_id, user_id):
-            await query.edit_message_text("⛔️ فقط ادمین می‌تواند پاکسازی کند.")
-            return
-        if not await _bot_can_delete(context, chat_id):
-            await query.edit_message_text("⛔️ ربات دسترسی حذف پیام ندارد.")
-            return
-        count = await _do_clean(chat_id, context)
-        try:
-            await query.edit_message_text(f"✅ تلاش برای حذف {count} پیام انجام شد.")
-        except Exception:
-            pass
-
-    elif query.data == "leave":
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
+        await clean_cmd(update, context)
+    elif query.data == "exit":
+        sent = await query.message.reply_text("❌ خروج از پنل مدیریت.")
+        await asyncio.sleep(5)
+        await sent.delete()
 
 async def welcome_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    for member in update.message.new_chat_members:
-        if member.id == (await context.bot.get_me()).id:
-            await update.message.reply_text(
-                "سلام! من اضافه شدم. لطفاً من را ادمین با دسترسی حذف پیام‌ها کنید تا پاکسازی کار کند ✅"
+    for m in update.message.new_chat_members:
+        if m.id == context.bot.id:
+            sent = await update.effective_message.reply_text(
+                "✅ ربات افزوده شد! لطفاً دسترسی «Delete messages» بدهید."
             )
+            await asyncio.sleep(5)
+            await sent.delete()
 
-# ---------- Application ----------
+# ---------------- Application ----------------
 application = Application.builder().token(TOKEN).updater(None).build()
 
-# دستورات بدون /
+# دستورات بدون اسلش
 application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^start$"), start_cmd))
 application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^clean$"), clean_cmd))
 
-# بقیه هندلرها
+# دکمه‌ها
 application.add_handler(CallbackQueryHandler(buttons_cb))
+# ذخیره پیام‌ها
 application.add_handler(MessageHandler(~filters.StatusUpdate.ALL, track_messages))
+# خوش‌آمدگویی
 application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_bot))
 
-# ---------- Flask ----------
-flask_app = Flask(__name__)
-
-@flask_app.post("/webhook")
-async def webhook():
-    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:
-        abort(403)
-    data = request.get_json(force=True, silent=True)
-    if not data:
-        return "no json", 400
-    update = Update.de_json(data, application.bot)
-    await application.update_queue.put(update)
-    return "ok", 200
-
-# مسیر ping برای UptimeRobot
-@flask_app.get("/ping")
-def ping():
-    return "ok", 200
-
-# ---------- Main ----------
+# ---------------- Main ----------------
 async def main():
-    webhook_url = f"{PUBLIC_URL.rstrip('/')}/webhook"
+    if not TOKEN:
+        raise RuntimeError("Env var TELEGRAM_TOKEN تنظیم نشده است.")
+    if not APP_URL:
+        raise RuntimeError("Env var APP_URL تنظیم نشده است.")
+
+    await application.bot.set_webhook(f"{APP_URL}/webhook/{WEBHOOK_SECRET}")
     await application.initialize()
-    await application.bot.set_webhook(
-        url=webhook_url,
-        secret_token=WEBHOOK_SECRET,
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES,
-    )
-    port = int(os.getenv("PORT", "10000"))
-    server = uvicorn.Server(uvicorn.Config(WsgiToAsgi(flask_app), host="0.0.0.0", port=port))
-    start_task = asyncio.create_task(application.start())
-    try:
-        await server.serve()
-    finally:
-        await application.stop()
-        await application.shutdown()
-        await start_task
+    await application.start()
+    print("Bot started with webhook:", f"{APP_URL}/webhook/{WEBHOOK_SECRET}")
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
+    flask_app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
