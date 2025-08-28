@@ -1,42 +1,48 @@
-import os
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import CommandHandler, Dispatcher, CallbackContext
 
+import os
+
+# مقدار توکن ربات که از BotFather گرفتید
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-PORT = int(os.environ.get("PORT", 5000))
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # مثلا "https://yourapp.onrender.com/webhook"
 
-if not TOKEN:
-    raise ValueError("لطفاً توکن ربات را در TELEGRAM_TOKEN وارد کنید!")
-
-# Flask app
+bot = Bot(token=TOKEN)
 app = Flask(__name__)
 
-# Handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! من ربات شما هستم!")
+# Dispatcher برای مدیریت دستورات
+dispatcher = Dispatcher(bot, None, workers=0)
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    await update.message.reply_text(f"شما نوشتید: {text}")
+# دستور /start
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("سلام! من ربات شما هستم.")
 
-# Telegram bot application
-application = ApplicationBuilder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("echo", echo))
+# دستور /help
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text("دستورات موجود:\n/start\n/help")
 
-# Flask route for Telegram webhook
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
+# اضافه کردن دستورها به دیسپچر
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(CommandHandler("help", help_command))
+
+# مسیر وبهوک
+@app.route(f"/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.create_task(application.update_queue.put(update))
-    return "OK"
+    update = Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
+    return "OK", 200
 
-# Optional: health check
+# روت اصلی برای چک کردن سرور
 @app.route("/", methods=["GET"])
 def index():
-    return "Bot is running!"
+    return "ربات فعال است!", 200
 
-# Start Flask app (for local testing)
+# تنظیم وبهوک روی تلگرام
+def set_webhook():
+    bot.set_webhook(WEBHOOK_URL)
+    print(f"Webhook set to {WEBHOOK_URL}")
+
 if __name__ == "__main__":
-    application.run_polling()  # فقط برای تست محلی، روی Render از webhook استفاده می‌کنیم
+    set_webhook()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
