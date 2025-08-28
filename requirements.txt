@@ -1,3 +1,2 @@
-python-telegram-bot[webhooks]==20.4
-Flask[async]==2.3.3
-gunicorn
+Flask
+python-telegram-bot[async]
