@@ -1,56 +1,75 @@
 import os
-import logging
 import asyncio
-from asyncio import run_coroutine_threadsafe
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler
+from telegram import Update, Bot, ChatMember, ChatMemberUpdated
+from telegram.ext import (
+    ApplicationBuilder, ContextTypes,
+    CommandHandler, ChatMemberHandler
+)
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "mysecret")
-APP_URL = os.getenv("APP_URL")
+# Flask app
+app = Flask(__name__)
 
-if not TELEGRAM_TOKEN or not APP_URL:
-    raise RuntimeError("Env vars TELEGRAM_TOKEN و APP_URL باید تنظیم شوند.")
+# دریافت توکن
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+if not TELEGRAM_TOKEN:
+    raise RuntimeError("Env var TELEGRAM_TOKEN تنظیم نشده است.")
 
-logging.basicConfig(level=logging.INFO)
-
-flask_app = Flask(__name__)
 bot = Bot(token=TELEGRAM_TOKEN)
+app_builder = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-# ایجاد loop جدید
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+# دستور start (بدون اسلش)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("سلام! ربات آنلاین است.")
 
-# ایجاد Application
-application = Application.builder().token(TELEGRAM_TOKEN).build()
-loop.run_until_complete(application.initialize())
+# دستور clean (پاکسازی پیام‌های گروه)
+async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if chat.type == "private":
+        await update.message.reply_text("این دستور فقط در گروه قابل استفاده است.")
+        return
 
-# دستور start
-async def start(update, context):
-    await update.message.reply_text("سلام! من آماده‌ام ✅")
+    # پاک کردن پیام‌های گروه (به تعداد محدود، به دلیل محدودیت Telegram)
+    messages = await context.bot.get_chat_history(chat.id, limit=100)
+    for msg in messages:
+        try:
+            await msg.delete()
+        except:
+            pass
+    await update.message.reply_text("پیام‌های گروه پاک شد!")
 
-application.add_handler(CommandHandler("start", start))
+# اضافه شدن ربات به گروه → گرفتن ادمین کامل
+async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    result = update.chat_member
+    if result.new_chat_member.user.id == bot.id:
+        await bot.promote_chat_member(
+            chat_id=result.chat.id,
+            user_id=bot.id,
+            can_delete_messages=True,
+            can_restrict_members=True,
+            can_promote_members=True,
+            can_change_info=True,
+            can_invite_users=True,
+            can_pin_messages=True,
+            is_anonymous=False
+        )
+
+# اضافه کردن handler ها
+app_builder.add_handler(CommandHandler("start", start))
+app_builder.add_handler(CommandHandler("clean", clean))
+app_builder.add_handler(ChatMemberHandler(new_member, ChatMemberHandler.MY_CHAT_MEMBER))
 
 # وبهوک
-@flask_app.post(f"/webhook/{WEBHOOK_SECRET}")
+@app.route(f"/webhook/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, bot)
-    # ارسال update به queue به صورت thread-safe با loop خودمان
-    run_coroutine_threadsafe(application.update_queue.put(update), loop)
-    return "ok"
+    update = Update.de_json(request.get_json(force=True), bot)
+    asyncio.run(app_builder.update_queue.put(update))
+    return "OK"
 
-# مسیر Health Check
-@flask_app.get("/")
-def health():
-    return "ok", 200
+# Health Check
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot is running", 200
 
-# اجرای سرور و پردازش handler ها
 if __name__ == "__main__":
-    bot.set_webhook(f"{APP_URL}/webhook/{WEBHOOK_SECRET}")
-    logging.info(f"Bot started with webhook: {APP_URL}/webhook/{WEBHOOK_SECRET}")
-
-    # ایجاد task برای پردازش update_queue
-    loop.create_task(application.start())
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
